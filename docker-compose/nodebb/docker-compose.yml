@@ -1,0 +1,30 @@
+services:
+  nodebb:
+    build:
+      context: ../..
+      dockerfile: docker-compose/nodebb/Dockerfile
+    container_name: nodebb
+
+    stdin_open: true
+    tty: true
+
+    ports:
+      - "4567:4567"
+
+    volumes:
+      - nodebb_data:/opt/nodebb
+      - mongo_data:/var/lib/mongodb
+      - ./user:/root
+
+    restart: unless-stopped
+
+    environment:
+      - TZ=Asia/Shanghai
+      - NODEBB_PORT=4567
+      - NODEBB_URL=http://localhost:4567
+      - ADMIN_USER=admin
+      - ADMIN_EMAIL=admin@example.com
+
+volumes:
+  nodebb_data:
+  mongo_data:

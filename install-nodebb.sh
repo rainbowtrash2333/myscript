@@ -3,7 +3,8 @@
 set -e
 
 echo "======================================="
-echo " NodeBB Ubuntu Auto Install"
+echo " NodeBB Ubuntu 24.04 Auto Install"
+echo " (Docker Compatible)"
 echo "======================================="
 
 if [ "$(id -u)" != "0" ]; then
@@ -11,22 +12,45 @@ if [ "$(id -u)" != "0" ]; then
     exit 1
 fi
 
+# 检测 systemd 可用性 (Docker 通常无 systemd)
+HAS_SYSTEMD=0
+if command -v systemctl &>/dev/null && systemctl is-system-running &>/dev/null 2>&1; then
+    HAS_SYSTEMD=1
+fi
+
+if [ "$HAS_SYSTEMD" -eq 0 ]; then
+    echo "检测到 Docker/非 systemd 环境，将使用替代方式管理服务"
+fi
+
+# -----------------------------
+# 幂等检查: 已安装则跳过
+# -----------------------------
+
+SECRETS_FILE="/opt/nodebb/.install-secrets"
+
+if [ -f "$SECRETS_FILE" ]; then
+    echo "检测到 NodeBB 已安装，跳过安装流程"
+    cat "$SECRETS_FILE"
+    exit 0
+fi
+
 # -----------------------------
 # 配置
 # -----------------------------
 
 NODEBB_DIR="/opt/nodebb"
-NODEBB_PORT="4567"
+NODEBB_PORT="${NODEBB_PORT:-4567}"
 
-ADMIN_USER="admin"
-ADMIN_EMAIL="admin@example.com"
+ADMIN_USER="${ADMIN_USER:-admin}"
+ADMIN_EMAIL="${ADMIN_EMAIL:-admin@example.com}"
 
 MONGO_ADMIN_PASS=$(openssl rand -base64 24 | tr -d "=+/" | cut -c1-20)
 MONGO_NODEBB_PASS=$(openssl rand -base64 24 | tr -d "=+/" | cut -c1-20)
 NODEBB_ADMIN_PASS=$(openssl rand -base64 24 | tr -d "=+/" | cut -c1-20)
+NODEBB_URL="${NODEBB_URL:-http://localhost:${NODEBB_PORT}}"
 
 # -----------------------------
-# 更新系统
+# 更新系统并安装基础依赖
 # -----------------------------
 
 apt-get update
@@ -39,10 +63,11 @@ apt-get install -y \
     gnupg \
     unzip \
     wget \
-    openssl
+    openssl \
+    lsb-release
 
 # -----------------------------
-# 安装 Node.js LTS
+# 安装 Node.js LTS (v22)
 # -----------------------------
 
 echo "安装 Node.js..."
@@ -53,30 +78,59 @@ bash /tmp/nodesource_setup.sh
 apt-get install -y nodejs
 
 # -----------------------------
-# 安装 MongoDB 8
+# 安装 MongoDB 8.0
 # -----------------------------
 
 echo "安装 MongoDB..."
 
 curl -fsSL https://www.mongodb.org/static/pgp/server-8.0.asc | \
-gpg -o /usr/share/keyrings/mongodb-server-8.0.gpg \
---dearmor
+    gpg -o /usr/share/keyrings/mongodb-server-8.0.gpg \
+    --dearmor
 
-UBUNTU_CODENAME=$(lsb_release -cs)
+UBUNTU_CODENAME=$(lsb_release -cs 2>/dev/null || echo "noble")
 
-echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu ${UBUNTU_CODENAME}/mongodb-org/8.0 multiverse" \
-| tee /etc/apt/sources.list.d/mongodb-org-8.0.list
+echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu ${UBUNTU_CODENAME}/mongodb-org/8.0 multiverse" | \
+    tee /etc/apt/sources.list.d/mongodb-org-8.0.list
 
 apt-get update
 apt-get install -y mongodb-org
 
-systemctl enable mongod
-systemctl start mongod
+# -----------------------------
+# 启动 MongoDB
+# -----------------------------
 
-sleep 5
+if [ "$HAS_SYSTEMD" -eq 1 ]; then
+    systemctl enable mongod
+    systemctl start mongod
+else
+    echo "启动 MongoDB (fork 模式)..."
+    mkdir -p /var/log/mongodb /var/lib/mongodb
+    chown -R mongodb:mongodb /var/log/mongodb /var/lib/mongodb
+    mongod --fork --logpath /var/log/mongodb/mongod.log --config /etc/mongod.conf
+fi
 
 # -----------------------------
-# 配置 MongoDB
+# 等待 MongoDB 就绪 (带超时)
+# -----------------------------
+
+echo "等待 MongoDB 就绪..."
+MONGO_READY=0
+for i in $(seq 1 30); do
+    if mongosh --quiet --eval "db.adminCommand('ping')" >/dev/null 2>&1; then
+        MONGO_READY=1
+        echo "MongoDB 已就绪"
+        break
+    fi
+    sleep 1
+done
+
+if [ "$MONGO_READY" -eq 0 ]; then
+    echo "错误: MongoDB 未能启动"
+    exit 1
+fi
+
+# -----------------------------
+# 配置 MongoDB — 创建用户
 # -----------------------------
 
 echo "配置 MongoDB..."
@@ -100,16 +154,34 @@ db.createUser({
 })
 EOF
 
-grep -q "authorization: enabled" /etc/mongod.conf || cat >> /etc/mongod.conf <<EOF
+# -----------------------------
+# 启用 MongoDB 授权
+# -----------------------------
 
-security:
-  authorization: enabled
-EOF
+sed -i 's/^#security:/security:/' /etc/mongod.conf 2>/dev/null || true
+sed -i 's/^#  authorization:/  authorization:/' /etc/mongod.conf 2>/dev/null || true
+grep -q "^security:" /etc/mongod.conf || echo -e "\nsecurity:\n  authorization: enabled" >> /etc/mongod.conf
 
-systemctl restart mongod
+if [ "$HAS_SYSTEMD" -eq 1 ]; then
+    systemctl restart mongod
+else
+    mongod --shutdown 2>/dev/null || true
+    sleep 2
+    mongod --fork --logpath /var/log/mongodb/mongod.log --config /etc/mongod.conf
+fi
+
+# 等待授权模式下 MongoDB 就绪
+echo "等待 MongoDB (授权模式) 就绪..."
+for i in $(seq 1 30); do
+    if mongosh --quiet --username admin --password "${MONGO_ADMIN_PASS}" --authenticationDatabase admin --eval "db.adminCommand('ping')" >/dev/null 2>&1; then
+        echo "MongoDB 授权模式已就绪"
+        break
+    fi
+    sleep 1
+done
 
 # -----------------------------
-# 创建 nodebb 用户
+# 创建 nodebb 系统用户
 # -----------------------------
 
 id -u nodebb &>/dev/null || useradd -m -s /bin/bash nodebb
@@ -130,7 +202,7 @@ cd ${NODEBB_DIR}
 
 cat > ${NODEBB_DIR}/config.json <<EOF
 {
-    "url": "http://0.0.0.0:${NODEBB_PORT}",
+    "url": "${NODEBB_URL}",
     "secret": "$(openssl rand -hex 32)",
     "database": "mongo",
     "mongo": {
@@ -148,7 +220,7 @@ EOF
 chown -R nodebb:nodebb ${NODEBB_DIR}
 
 # -----------------------------
-# 安装 NodeBB
+# 安装 NodeBB 依赖
 # -----------------------------
 
 echo "安装 NodeBB 依赖..."
@@ -167,17 +239,49 @@ sudo -u nodebb ./nodebb build
 
 sudo -u nodebb ./nodebb start
 
-sleep 15
+echo "等待 NodeBB 启动..."
+for i in $(seq 1 30); do
+    if curl -s http://localhost:${NODEBB_PORT} >/dev/null 2>&1; then
+        echo "NodeBB 已启动"
+        break
+    fi
+    sleep 2
+done
 
 sudo -u nodebb ./nodebb user:create "${ADMIN_USER}" "${ADMIN_EMAIL}" "${NODEBB_ADMIN_PASS}" --administrator
 
 sudo -u nodebb ./nodebb stop
 
 # -----------------------------
-# systemd 服务
+# 保存凭据到文件 (Docker 持久化用)
 # -----------------------------
 
-cat > /etc/systemd/system/nodebb.service <<EOF
+cat > "$SECRETS_FILE" <<EOF
+=======================================
+ NodeBB 安装完成
+=======================================
+
+访问地址: ${NODEBB_URL}
+
+NodeBB 管理员:
+用户名: ${ADMIN_USER}
+密码: ${NODEBB_ADMIN_PASS}
+
+MongoDB admin:
+用户名: admin
+密码: ${MONGO_ADMIN_PASS}
+
+MongoDB nodebb:
+用户名: nodebb
+密码: ${MONGO_NODEBB_PASS}
+EOF
+
+# -----------------------------
+# systemd 服务 + 防火墙 (仅非 Docker)
+# -----------------------------
+
+if [ "$HAS_SYSTEMD" -eq 1 ]; then
+    cat > /etc/systemd/system/nodebb.service <<EOF
 [Unit]
 Description=NodeBB Forum
 After=network.target mongod.service
@@ -195,42 +299,20 @@ Restart=always
 WantedBy=multi-user.target
 EOF
 
-systemctl daemon-reload
-systemctl enable nodebb
-systemctl start nodebb
+    systemctl daemon-reload
+    systemctl enable nodebb
+    systemctl start nodebb
 
-# -----------------------------
-# 防火墙
-# -----------------------------
-
-ufw allow ${NODEBB_PORT}/tcp || true
+    ufw allow ${NODEBB_PORT}/tcp || true
+else
+    echo "非 systemd 环境: 跳过 systemd 服务和防火墙配置"
+fi
 
 # -----------------------------
 # 输出信息
 # -----------------------------
 
-IP=$(curl -s ifconfig.me || hostname -I | awk '{print $1}')
-
-echo
-echo "======================================="
-echo " 安装完成"
-echo "======================================="
-echo
-echo "访问地址:"
-echo "http://${IP}:${NODEBB_PORT}"
-echo
-echo "NodeBB 管理员:"
-echo "用户名: ${ADMIN_USER}"
-echo "密码: ${NODEBB_ADMIN_PASS}"
-echo
-echo "MongoDB admin:"
-echo "用户名: admin"
-echo "密码: ${MONGO_ADMIN_PASS}"
-echo
-echo "MongoDB nodebb:"
-echo "用户名: nodebb"
-echo "密码: ${MONGO_NODEBB_PASS}"
-echo
+cat "$SECRETS_FILE"
 echo "Node.js 版本:"
 node -v
 echo
