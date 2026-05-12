@@ -36,6 +36,8 @@ USER nodebb
 
 WORKDIR /app/nodebb
 
+RUN cp install/package.json package.json
+
 RUN npm install --omit=dev
 
 EXPOSE 4567
