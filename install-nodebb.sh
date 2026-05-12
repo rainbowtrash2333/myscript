@@ -1,4 +1,3 @@
-```bash
 #!/usr/bin/env bash
 
 set -e
@@ -239,4 +238,3 @@ echo "MongoDB 版本:"
 mongod --version | head -n 1
 echo
 echo "======================================="
-```

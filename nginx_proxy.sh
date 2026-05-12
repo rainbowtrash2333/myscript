@@ -1,4 +1,3 @@
-```bash id="nginx-proxy-install"
 #!/usr/bin/env bash
 
 set -e
@@ -112,4 +111,3 @@ echo "nginx 配置文件:"
 echo "${CONFIG_FILE}"
 echo
 echo "======================================="
-```
