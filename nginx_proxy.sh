@@ -6,8 +6,15 @@ echo "======================================="
 echo " Nginx Reverse Proxy Installer"
 echo "======================================="
 
+# =====================================================
+# 提权检测：非 root 但有 sudo 则自动重提
+# =====================================================
 if [ "$(id -u)" != "0" ]; then
-    echo "请使用 root 运行"
+    if command -v sudo &>/dev/null && sudo -v &>/dev/null 2>&1; then
+        exec sudo bash "$0" "$@"
+    fi
+    echo "错误：需要 root 或 sudo 权限运行" >&2
+    echo "请执行: sudo ./$(basename "$0")" >&2
     exit 1
 fi
 

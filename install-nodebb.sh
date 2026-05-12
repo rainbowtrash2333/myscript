@@ -2,15 +2,22 @@
 
 set -e
 
+# =====================================================
+# 提权检测：非 root 但有 sudo 则自动重提
+# =====================================================
+if [ "$(id -u)" != "0" ]; then
+    if command -v sudo &>/dev/null && sudo -v &>/dev/null 2>&1; then
+        exec sudo bash "$0" "$@"
+    fi
+    echo "错误：需要 root 或 sudo 权限运行" >&2
+    echo "请执行: sudo ./$(basename "$0")" >&2
+    exit 1
+fi
+
 echo "======================================="
 echo " NodeBB Ubuntu 24.04 Auto Install"
 echo " (Docker Compatible)"
 echo "======================================="
-
-if [ "$(id -u)" != "0" ]; then
-    echo "请使用 root 运行"
-    exit 1
-fi
 
 # 检测 systemd 可用性 (Docker 通常无 systemd)
 HAS_SYSTEMD=0
@@ -21,6 +28,18 @@ fi
 if [ "$HAS_SYSTEMD" -eq 0 ]; then
     echo "检测到 Docker/非 systemd 环境，将使用替代方式管理服务"
 fi
+
+# -----------------------------
+# 辅助：以降权用户执行命令 (兼容有无 sudo)
+# -----------------------------
+
+run_as_nodebb() {
+    if command -v sudo &>/dev/null; then
+        sudo -u nodebb "$@"
+    else
+        su -s /bin/bash nodebb -c "$*"
+    fi
+}
 
 # -----------------------------
 # 幂等检查: 已安装则跳过
@@ -192,7 +211,7 @@ id -u nodebb &>/dev/null || useradd -m -s /bin/bash nodebb
 
 echo "下载 NodeBB..."
 
-sudo -u nodebb git clone -b v4.x https://github.com/NodeBB/NodeBB.git ${NODEBB_DIR}
+run_as_nodebb git clone -b v4.x https://github.com/NodeBB/NodeBB.git ${NODEBB_DIR}
 
 cd ${NODEBB_DIR}
 
@@ -227,7 +246,7 @@ echo "安装 NodeBB 依赖..."
 
 cd ${NODEBB_DIR}
 
-sudo -u nodebb npm install --production
+run_as_nodebb npm install --production
 
 # -----------------------------
 # 创建管理员
@@ -235,9 +254,9 @@ sudo -u nodebb npm install --production
 
 echo "初始化 NodeBB..."
 
-sudo -u nodebb ./nodebb build
+run_as_nodebb ./nodebb build
 
-sudo -u nodebb ./nodebb start
+run_as_nodebb ./nodebb start
 
 echo "等待 NodeBB 启动..."
 for i in $(seq 1 30); do
@@ -248,9 +267,9 @@ for i in $(seq 1 30); do
     sleep 2
 done
 
-sudo -u nodebb ./nodebb user:create "${ADMIN_USER}" "${ADMIN_EMAIL}" "${NODEBB_ADMIN_PASS}" --administrator
+run_as_nodebb ./nodebb user:create "${ADMIN_USER}" "${ADMIN_EMAIL}" "${NODEBB_ADMIN_PASS}" --administrator
 
-sudo -u nodebb ./nodebb stop
+run_as_nodebb ./nodebb stop
 
 # -----------------------------
 # 保存凭据到文件 (Docker 持久化用)

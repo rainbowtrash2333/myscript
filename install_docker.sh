@@ -6,23 +6,16 @@ echo "======================================="
 echo " Docker Engine Auto Install"
 echo "======================================="
 
-# -----------------------------
-# 检查 sudo
-# -----------------------------
-
-if ! command -v sudo >/dev/null 2>&1; then
-    echo "未安装 sudo"
-    echo "请先执行: su -"
-    echo "然后安装 sudo"
-    exit 1
-fi
-
-# -----------------------------
-# sudo 权限检测
-# -----------------------------
-
-if ! sudo -v; then
-    echo "sudo 验证失败"
+# =====================================================
+# 提权检测: 直接 root → SUDO="" / 有 sudo → SUDO="sudo"
+# =====================================================
+if [ "$(id -u)" = "0" ]; then
+    SUDO=""
+elif command -v sudo &>/dev/null && sudo -v &>/dev/null 2>&1; then
+    SUDO="sudo"
+else
+    echo "错误：需要 root 或 sudo 权限运行" >&2
+    echo "请执行: sudo ./$(basename "$0")" >&2
     exit 1
 fi
 
@@ -39,7 +32,7 @@ echo
 echo "卸载旧版本 Docker..."
 
 for pkg in docker.io docker-doc docker-compose podman-docker containerd runc; do
-    sudo apt-get remove -y $pkg || true
+    $SUDO apt-get remove -y $pkg || true
 done
 
 # -----------------------------
@@ -49,9 +42,9 @@ done
 echo
 echo "安装依赖..."
 
-sudo apt-get update
+$SUDO apt-get update
 
-sudo apt-get install -y \
+$SUDO apt-get install -y \
     ca-certificates \
     curl \
     gnupg \
@@ -64,12 +57,12 @@ sudo apt-get install -y \
 echo
 echo "添加 Docker 官方 GPG Key..."
 
-sudo install -m 0755 -d /etc/apt/keyrings
+$SUDO install -m 0755 -d /etc/apt/keyrings
 
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
-sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+$SUDO gpg --dearmor -o /etc/apt/keyrings/docker.gpg
 
-sudo chmod a+r /etc/apt/keyrings/docker.gpg
+$SUDO chmod a+r /etc/apt/keyrings/docker.gpg
 
 # -----------------------------
 # Docker Repo
@@ -85,7 +78,7 @@ echo \
   "deb [arch=${ARCH} signed-by=/etc/apt/keyrings/docker.gpg] \
   https://download.docker.com/linux/ubuntu \
   ${CODENAME} stable" | \
-sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+$SUDO tee /etc/apt/sources.list.d/docker.list > /dev/null
 
 # -----------------------------
 # 安装 Docker
@@ -94,9 +87,9 @@ sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 echo
 echo "安装 Docker Engine..."
 
-sudo apt-get update
+$SUDO apt-get update
 
-sudo apt-get install -y \
+$SUDO apt-get install -y \
     docker-ce \
     docker-ce-cli \
     containerd.io \
@@ -110,8 +103,8 @@ sudo apt-get install -y \
 echo
 echo "启动 Docker..."
 
-sudo systemctl enable docker
-sudo systemctl start docker
+$SUDO systemctl enable docker
+$SUDO systemctl start docker
 
 # -----------------------------
 # docker group
@@ -120,8 +113,8 @@ sudo systemctl start docker
 echo
 echo "配置 docker 用户组..."
 
-sudo groupadd docker 2>/dev/null || true
-sudo usermod -aG docker ${CURRENT_USER}
+$SUDO groupadd docker 2>/dev/null || true
+$SUDO usermod -aG docker ${CURRENT_USER}
 
 # -----------------------------
 # 测试
@@ -130,7 +123,7 @@ sudo usermod -aG docker ${CURRENT_USER}
 echo
 echo "测试 Docker..."
 
-sudo docker run --rm hello-world || true
+$SUDO docker run --rm hello-world || true
 
 # -----------------------------
 # 输出
@@ -143,11 +136,11 @@ echo "======================================="
 echo
 
 echo "Docker Version:"
-docker --version || sudo docker --version
+docker --version || $SUDO docker --version
 
 echo
 echo "Docker Compose Version:"
-docker compose version || sudo docker compose version
+docker compose version || $SUDO docker compose version
 
 echo
 echo "当前用户已加入 docker 组:"
