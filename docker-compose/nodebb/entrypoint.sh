@@ -44,20 +44,30 @@ if [ -d /opt/nodebb ]; then
 fi
 
 # ------------------------------------------------------------------
-# 启动 MongoDB
+# 启动 MongoDB (幂等: 未运行才启动)
 # ------------------------------------------------------------------
-echo "启动 MongoDB..."
-mkdir -p /var/log/mongodb /var/lib/mongodb
-chown -R mongodb:mongodb /var/log/mongodb /var/lib/mongodb
-mongod --fork --logpath /var/log/mongodb/mongod.log --config /etc/mongod.conf
+if ! pgrep -x mongod >/dev/null 2>&1; then
+    echo "启动 MongoDB..."
+    mkdir -p /var/log/mongodb /var/lib/mongodb
+    chown -R mongodb:mongodb /var/log/mongodb /var/lib/mongodb
+    mongod --fork --logpath /var/log/mongodb/mongod.log --config /etc/mongod.conf
+fi
 
-# 等待 MongoDB 就绪
+# 等待 MongoDB 就绪 (兼容有/无授权模式)
+echo "等待 MongoDB 就绪..."
 MONGO_READY=0
+MONGO_ADMIN_PASS=$(sed -n '/^MongoDB admin:/{n;s/.*密码: //p}' /opt/nodebb/.install-secrets 2>/dev/null)
 for i in $(seq 1 30); do
-    if mongosh --quiet --eval "db.adminCommand('ping')" >/dev/null 2>&1; then
-        MONGO_READY=1
-        echo "MongoDB 已就绪"
-        break
+    if [ -n "$MONGO_ADMIN_PASS" ]; then
+        if mongosh --quiet --username admin --password "$MONGO_ADMIN_PASS" --authenticationDatabase admin --eval "db.adminCommand('ping')" >/dev/null 2>&1; then
+            MONGO_READY=1
+            break
+        fi
+    else
+        if mongosh --quiet --eval "db.adminCommand('ping')" >/dev/null 2>&1; then
+            MONGO_READY=1
+            break
+        fi
     fi
     sleep 1
 done
@@ -65,6 +75,7 @@ if [ "$MONGO_READY" -eq 0 ]; then
     echo "错误: MongoDB 未能启动"
     exit 1
 fi
+echo "MongoDB 已就绪"
 
 # ------------------------------------------------------------------
 # 启动 NodeBB
