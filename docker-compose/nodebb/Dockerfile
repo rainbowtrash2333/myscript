@@ -1,54 +1,45 @@
 FROM ubuntu:24.04
 
-ENV DEBIAN_FRONTEND=noninteractive
-ENV TZ=UTC
+ENV NODE_ENV=production \
+    DAEMON=false \
+    SILENT=false
 
-RUN apt-get update && apt-get install -y tzdata && \
-    ln -fs "/usr/share/zoneinfo/$TZ" /etc/localtime && \
-    echo "$TZ" > /etc/timezone && \
-    rm -rf /var/lib/apt/lists/*
-
-RUN apt-get update && apt-get install -y \
-    curl \
-    git \
-    build-essential \
-    ca-certificates \
-    gnupg \
-    sudo \
-    unzip \
-    wget \
-    openssl \
-    lsb-release \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        gnupg \
+        git \
+        tini \
     && rm -rf /var/lib/apt/lists/*
 
-RUN curl -fsSL https://deb.nodesource.com/setup_lts.x -o /tmp/nodesource_setup.sh && \
-    bash /tmp/nodesource_setup.sh && \
-    apt-get install -y nodejs && \
-    rm -rf /var/lib/apt/lists/*
+RUN curl -fsSL https://deb.nodesource.com/setup_lts.x -o /tmp/nodesource_setup.sh \
+    && bash /tmp/nodesource_setup.sh \
+    && apt-get install -y nodejs \
+    && rm /tmp/nodesource_setup.sh \
+    && rm -rf /var/lib/apt/lists/*
 
-RUN [ -f /usr/share/keyrings/mongodb-server-8.0.gpg ] && rm -f /usr/share/keyrings/mongodb-server-8.0.gpg; \
-    curl -fsSL https://www.mongodb.org/static/pgp/server-8.0.asc | \
-        gpg -o /usr/share/keyrings/mongodb-server-8.0.gpg --dearmor && \
-    UBUNTU_CODENAME=$(lsb_release -cs 2>/dev/null || echo "noble") && \
-    echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu ${UBUNTU_CODENAME}/mongodb-org/8.0 multiverse" | \
-        tee /etc/apt/sources.list.d/mongodb-org-8.0.list && \
-    apt-get update && apt-get install -y mongodb-org && \
-    rm -rf /var/lib/apt/lists/*
+RUN node -v && npm -v && git --version
 
-RUN useradd -m -s /bin/bash nodebb && \
-    mkdir -p /var/log/mongodb /var/lib/mongodb && \
-    chown -R mongodb:mongodb /var/log/mongodb /var/lib/mongodb
+RUN groupadd -r nodebb && useradd -r -g nodebb -m -d /home/nodebb nodebb
 
-RUN git clone -b v4.x https://github.com/NodeBB/NodeBB.git /opt/nodebb
+WORKDIR /app
 
-WORKDIR /opt/nodebb
+RUN git clone -b v4.x https://github.com/NodeBB/NodeBB.git /app/nodebb
 
-RUN chown -R nodebb:nodebb /opt/nodebb && \
-    sudo -u nodebb npm install --production
+RUN chown -R nodebb:nodebb /app
 
-COPY docker-compose/nodebb/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+USER nodebb
+
+WORKDIR /app/nodebb
+
+RUN npm install --omit=dev
 
 EXPOSE 4567
 
-ENTRYPOINT ["/entrypoint.sh"]
+VOLUME ["/app/nodebb"]
+
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
