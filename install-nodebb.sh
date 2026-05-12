@@ -106,6 +106,7 @@ fi
 if ! command -v mongod &>/dev/null; then
     echo "安装 MongoDB..."
 
+    [ -f /usr/share/keyrings/mongodb-server-8.0.gpg ] && rm -f /usr/share/keyrings/mongodb-server-8.0.gpg
     curl -fsSL https://www.mongodb.org/static/pgp/server-8.0.asc | \
         gpg -o /usr/share/keyrings/mongodb-server-8.0.gpg \
         --dearmor
