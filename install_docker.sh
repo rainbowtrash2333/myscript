@@ -1,31 +1,45 @@
-```bash id=docker-install
-#!usrbinenv bash
+#!/usr/bin/env bash
 
 set -e
 
-echo =======================================
-echo  Docker Engine Auto Install
-echo =======================================
+echo "======================================="
+echo " Docker Engine Auto Install"
+echo "======================================="
 
-if [ $(id -u) != 0 ]; then
-    echo 请使用 root 运行
+# -----------------------------
+# 检查 sudo
+# -----------------------------
+
+if ! command -v sudo >/dev/null 2>&1; then
+    echo "未安装 sudo"
+    echo "请先执行: su -"
+    echo "然后安装 sudo"
     exit 1
 fi
 
-CURRENT_USER=${SUDO_USER-$(logname 2devnull  echo root)}
+# -----------------------------
+# sudo 权限检测
+# -----------------------------
+
+if ! sudo -v; then
+    echo "sudo 验证失败"
+    exit 1
+fi
+
+CURRENT_USER=$(whoami)
 
 echo
-echo 当前用户 ${CURRENT_USER}
+echo "当前用户: ${CURRENT_USER}"
 
 # -----------------------------
 # 卸载旧版本
 # -----------------------------
 
 echo
-echo 卸载旧版本 Docker...
+echo "卸载旧版本 Docker..."
 
 for pkg in docker.io docker-doc docker-compose podman-docker containerd runc; do
-    apt-get remove -y $pkg  true
+    sudo apt-get remove -y $pkg || true
 done
 
 # -----------------------------
@@ -33,60 +47,60 @@ done
 # -----------------------------
 
 echo
-echo 安装依赖...
+echo "安装依赖..."
 
-apt-get update
+sudo apt-get update
 
-apt-get install -y 
-    ca-certificates 
-    curl 
-    gnupg 
+sudo apt-get install -y \
+    ca-certificates \
+    curl \
+    gnupg \
     lsb-release
 
 # -----------------------------
-# 添加 Docker GPG Key
+# Docker GPG Key
 # -----------------------------
 
 echo
-echo 添加 Docker 官方 GPG Key...
+echo "添加 Docker 官方 GPG Key..."
 
-install -m 0755 -d etcaptkeyrings
+sudo install -m 0755 -d /etc/apt/keyrings
 
-curl -fsSL httpsdownload.docker.comlinuxubuntugpg  
-gpg --dearmor -o etcaptkeyringsdocker.gpg
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
+sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
 
-chmod a+r etcaptkeyringsdocker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
 
 # -----------------------------
-# 添加 Docker 仓库
+# Docker Repo
 # -----------------------------
 
 echo
-echo 添加 Docker 仓库...
+echo "添加 Docker 仓库..."
 
 ARCH=$(dpkg --print-architecture)
 CODENAME=$(lsb_release -cs)
 
-echo 
-  deb [arch=${ARCH} signed-by=etcaptkeyringsdocker.gpg] 
-  httpsdownload.docker.comlinuxubuntu 
-  ${CODENAME} stable  
-  tee etcaptsources.list.ddocker.list  devnull
+echo \
+  "deb [arch=${ARCH} signed-by=/etc/apt/keyrings/docker.gpg] \
+  https://download.docker.com/linux/ubuntu \
+  ${CODENAME} stable" | \
+sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 
 # -----------------------------
 # 安装 Docker
 # -----------------------------
 
 echo
-echo 安装 Docker Engine...
+echo "安装 Docker Engine..."
 
-apt-get update
+sudo apt-get update
 
-apt-get install -y 
-    docker-ce 
-    docker-ce-cli 
-    containerd.io 
-    docker-buildx-plugin 
+sudo apt-get install -y \
+    docker-ce \
+    docker-ce-cli \
+    containerd.io \
+    docker-buildx-plugin \
     docker-compose-plugin
 
 # -----------------------------
@@ -94,66 +108,62 @@ apt-get install -y
 # -----------------------------
 
 echo
-echo 启动 Docker...
+echo "启动 Docker..."
 
-systemctl enable docker
-systemctl start docker
+sudo systemctl enable docker
+sudo systemctl start docker
 
 # -----------------------------
 # docker group
 # -----------------------------
 
 echo
-echo 配置 docker 用户组...
+echo "配置 docker 用户组..."
 
-groupadd docker 2devnull  true
-usermod -aG docker ${CURRENT_USER}  true
-
-# -----------------------------
-# 测试 Docker
-# -----------------------------
-
-echo
-echo 测试 Docker...
-
-docker run --rm hello-world  true
+sudo groupadd docker 2>/dev/null || true
+sudo usermod -aG docker ${CURRENT_USER}
 
 # -----------------------------
-# 输出信息
+# 测试
 # -----------------------------
 
 echo
-echo =======================================
-echo  Docker 安装完成
-echo =======================================
-echo
+echo "测试 Docker..."
 
-echo Docker Version
-docker --version
+sudo docker run --rm hello-world || true
 
-echo
-echo Docker Compose Version
-docker compose version
+# -----------------------------
+# 输出
+# -----------------------------
 
 echo
-echo Docker 服务状态
-systemctl is-active docker
-
-echo
-echo 当前用户已加入 docker 组
-echo ${CURRENT_USER}
-
-echo
-echo 请重新登录 SSH 或执行
-echo
-echo newgrp docker
-echo
-echo 之后即可免 sudo 使用 docker
+echo "======================================="
+echo " Docker 安装完成"
+echo "======================================="
 echo
 
-echo 测试命令
-echo docker run hello-world
+echo "Docker Version:"
+docker --version || sudo docker --version
 
 echo
-echo =======================================
-```
+echo "Docker Compose Version:"
+docker compose version || sudo docker compose version
+
+echo
+echo "当前用户已加入 docker 组:"
+echo "${CURRENT_USER}"
+
+echo
+echo "请重新登录 SSH"
+echo "或者执行:"
+echo
+echo "newgrp docker"
+echo
+echo "之后即可免 sudo 使用 docker"
+echo
+
+echo "测试命令:"
+echo "docker run hello-world"
+
+echo
+echo "======================================="
