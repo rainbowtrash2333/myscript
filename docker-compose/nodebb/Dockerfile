@@ -42,6 +42,5 @@ RUN npm install --omit=dev
 
 EXPOSE 4567
 
-VOLUME ["/app/nodebb"]
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
