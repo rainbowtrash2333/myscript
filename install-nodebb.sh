@@ -69,50 +69,55 @@ NODEBB_ADMIN_PASS=$(openssl rand -base64 24 | tr -d "=+/" | cut -c1-20)
 NODEBB_URL="${NODEBB_URL:-http://localhost:${NODEBB_PORT}}"
 
 # -----------------------------
-# 更新系统并安装基础依赖
+# 更新系统并安装基础依赖 (已装则跳过)
 # -----------------------------
 
-apt-get update
-
-apt-get install -y \
-    curl \
-    git \
-    build-essential \
-    ca-certificates \
-    gnupg \
-    unzip \
-    wget \
-    openssl \
-    lsb-release
-
-# -----------------------------
-# 安装 Node.js LTS (v22)
-# -----------------------------
-
-echo "安装 Node.js..."
-
-curl -fsSL https://deb.nodesource.com/setup_lts.x -o /tmp/nodesource_setup.sh
-bash /tmp/nodesource_setup.sh
-
-apt-get install -y nodejs
+if ! command -v git &>/dev/null; then
+    apt-get update
+    apt-get install -y \
+        curl \
+        git \
+        build-essential \
+        ca-certificates \
+        gnupg \
+        unzip \
+        wget \
+        openssl \
+        lsb-release
+fi
 
 # -----------------------------
-# 安装 MongoDB 8.0
+# 安装 Node.js LTS (v22, 已装则跳过)
 # -----------------------------
 
-echo "安装 MongoDB..."
+if ! command -v node &>/dev/null; then
+    echo "安装 Node.js..."
 
-curl -fsSL https://www.mongodb.org/static/pgp/server-8.0.asc | \
-    gpg -o /usr/share/keyrings/mongodb-server-8.0.gpg \
-    --dearmor
+    curl -fsSL https://deb.nodesource.com/setup_lts.x -o /tmp/nodesource_setup.sh
+    bash /tmp/nodesource_setup.sh
 
-UBUNTU_CODENAME=$(lsb_release -cs 2>/dev/null || echo "noble")
+    apt-get install -y nodejs
+fi
 
-echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu ${UBUNTU_CODENAME}/mongodb-org/8.0 multiverse" | \
-    tee /etc/apt/sources.list.d/mongodb-org-8.0.list
+# -----------------------------
+# 安装 MongoDB 8.0 (已装则跳过)
+# -----------------------------
 
-apt-get update
-apt-get install -y mongodb-org
+if ! command -v mongod &>/dev/null; then
+    echo "安装 MongoDB..."
+
+    curl -fsSL https://www.mongodb.org/static/pgp/server-8.0.asc | \
+        gpg -o /usr/share/keyrings/mongodb-server-8.0.gpg \
+        --dearmor
+
+    UBUNTU_CODENAME=$(lsb_release -cs 2>/dev/null || echo "noble")
+
+    echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-8.0.gpg ] https://repo.mongodb.org/apt/ubuntu ${UBUNTU_CODENAME}/mongodb-org/8.0 multiverse" | \
+        tee /etc/apt/sources.list.d/mongodb-org-8.0.list
+
+    apt-get update
+    apt-get install -y mongodb-org
+fi
 
 # -----------------------------
 # 启动 MongoDB
