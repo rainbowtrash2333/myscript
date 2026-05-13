@@ -95,5 +95,5 @@ if [ ! -e "${APP_DIR}/config.json" ]; then
     gosu "$APP_USER" ln -sf "$CONFIG" "${APP_DIR}/config.json"
 fi
 
-echo "==> Starting NodeBB ..."
-exec gosu "$APP_USER" "${APP_DIR}/nodebb" start
+echo "==> Starting NodeBB in foreground ..."
+exec gosu "$APP_USER" node loader.js --no-silent --no-daemon
