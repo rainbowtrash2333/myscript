@@ -73,3 +73,8 @@ data/
 processed_audit.xlsx
 packages/
 output/
+
+.env
+.claude
+nodebb-data/
+mongo-data/

@@ -72,10 +72,11 @@ ENV NODE_ENV=production \
     CONFIG_DIR=/opt/config \
     CONFIG=/opt/config/config.json
 
-# tini 处理 PID 1 信号转发; netcat 用于 entrypoint 探测 mongo 端口
+# tini: PID 1 信号转发; netcat: entrypoint 探测 mongo; gosu: root -> nodebb 降权 (execve, 不 fork)
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get -y --no-install-recommends install \
         tini \
+        gosu \
         ca-certificates \
         netcat-openbsd \
     && rm -rf /var/lib/apt/lists/* \
@@ -89,12 +90,11 @@ RUN apt-get update \
 WORKDIR /usr/src/app/
 
 COPY --from=build --chown=${USER}:${USER} /usr/src/app/ /usr/src/app/
-COPY --chown=${USER}:${USER} entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-USER ${USER}
-
+# 注: 不设 USER. 容器以 root 启动, entrypoint chown 绑挂目录后用 gosu 切到 nodebb
 EXPOSE 4567
 
 ENTRYPOINT ["tini", "--", "/usr/local/bin/entrypoint.sh"]

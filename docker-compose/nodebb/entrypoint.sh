@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
 # NodeBB 容器入口
 # 流程:
+#   0. 以 root 启动: chown 绑挂目录, 让 nodebb 用户能写
 #   1. 等 MongoDB TCP 端口就绪
 #   2. 首次启动: 用环境变量生成 setup.json, 跑 ./nodebb setup 非交互安装
-#   3. exec ./nodebb start (前台, DAEMON=false)
+#   3. exec gosu nodebb ./nodebb start (前台, DAEMON=false)
 
 set -euo pipefail
 
+APP_USER=nodebb
+APP_DIR=/usr/src/app
 CONFIG_DIR="${CONFIG_DIR:-/opt/config}"
 CONFIG="${CONFIG:-${CONFIG_DIR}/config.json}"
 SETUP_JSON="${CONFIG_DIR}/setup.json"
+UPLOADS_DIR="${APP_DIR}/public/uploads"
 
 MONGO_HOST="${MONGO_HOST:-mongo}"
 MONGO_PORT="${MONGO_PORT:-27017}"
@@ -25,7 +29,17 @@ ADMIN_EMAIL="${ADMIN_EMAIL:-admin@example.com}"
 : "${MONGO_PASS:?ERROR: 环境变量 MONGO_PASS 未设置}"
 : "${ADMIN_PASS:?ERROR: 环境变量 ADMIN_PASS 未设置}"
 
-cd /usr/src/app/
+# ----------------------------------------------------------------------
+# 0. 修复绑挂目录所有权
+#    宿主机首启时 ./data/config 与 ./data/uploads 是 root 所有,
+#    覆盖了镜像内 nodebb:nodebb 的所有权 —— 必须在容器内 chown 回来
+# ----------------------------------------------------------------------
+if [ "$(id -u)" = "0" ]; then
+    mkdir -p "$CONFIG_DIR" "$UPLOADS_DIR"
+    chown -R "${APP_USER}:${APP_USER}" "$CONFIG_DIR" "$UPLOADS_DIR"
+fi
+
+cd "$APP_DIR"
 
 # ----------------------------------------------------------------------
 # 1. 等 MongoDB
@@ -44,14 +58,15 @@ for i in $(seq 1 60); do
 done
 
 # ----------------------------------------------------------------------
-# 2. 首次启动: 自动 setup
+# 2. 首次启动: 自动 setup (以 nodebb 身份)
 # ----------------------------------------------------------------------
 if [ ! -f "$CONFIG" ]; then
     echo "==> 首次启动: 生成 ${SETUP_JSON} 并执行 NodeBB setup"
 
-    SECRET="$(node -e 'console.log(require("crypto").randomBytes(32).toString("hex"))')"
+    SECRET="$(gosu "$APP_USER" node -e 'console.log(require("crypto").randomBytes(32).toString("hex"))')"
 
-    cat > "$SETUP_JSON" <<EOF
+    # 用 gosu 写文件, 保证文件属主是 nodebb
+    gosu "$APP_USER" tee "$SETUP_JSON" >/dev/null <<EOF
 {
     "url": "${NODEBB_URL}",
     "secret": "${SECRET}",
@@ -69,11 +84,11 @@ if [ ! -f "$CONFIG" ]; then
 }
 EOF
 
-    # nodebb setup 读 setup.json, 写出 config.json 到 cwd
-    /usr/src/app/nodebb setup "$SETUP_JSON"
+    # nodebb setup 读 setup.json, 写 config.json 到 cwd
+    gosu "$APP_USER" "${APP_DIR}/nodebb" setup "$SETUP_JSON"
 
-    if [ -f /usr/src/app/config.json ]; then
-        mv /usr/src/app/config.json "$CONFIG"
+    if [ -f "${APP_DIR}/config.json" ]; then
+        gosu "$APP_USER" mv "${APP_DIR}/config.json" "$CONFIG"
     fi
 
     # setup.json 含明文密码, 用完即删
@@ -83,12 +98,12 @@ EOF
 fi
 
 # 软链 config.json 到工作目录 (NodeBB 默认从 cwd 读)
-if [ ! -e /usr/src/app/config.json ]; then
-    ln -sf "$CONFIG" /usr/src/app/config.json
+if [ ! -e "${APP_DIR}/config.json" ]; then
+    gosu "$APP_USER" ln -sf "$CONFIG" "${APP_DIR}/config.json"
 fi
 
 # ----------------------------------------------------------------------
-# 3. 启动 NodeBB (前台)
+# 3. 启动 NodeBB (前台, 降权到 nodebb)
 # ----------------------------------------------------------------------
 echo "==> 启动 NodeBB ..."
-exec /usr/src/app/nodebb start
+exec gosu "$APP_USER" "${APP_DIR}/nodebb" start
