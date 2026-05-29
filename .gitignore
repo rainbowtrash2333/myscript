@@ -60,6 +60,9 @@ coverage.xml
 *.sublime-project
 *.sublime-workspace
 
+# OpenCode internal
+.omo/
+
 # Logs and temporary files
 *.log
 *.tmp

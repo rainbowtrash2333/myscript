@@ -1,0 +1,214 @@
+#!/usr/bin/env bash
+# =====================================================
+# nginx-tools - Nginx 运维命令行工具
+# =====================================================
+# 定位: 类似 git / docker / systemctl 的命令行工具
+# 使用: nginx-tools <command> <subcommand> [options...]
+# =====================================================
+set -euo pipefail
+
+# -----------------------------
+# 路径发现
+# -----------------------------
+_SELF="$(readlink -f "$0")"
+_SELF_DIR="$(cd "$(dirname "$_SELF")" && pwd)"
+
+# 安装路径检测
+if [[ -d "/usr/local/lib/nginx-tools" ]]; then
+    NGINX_TOOLS_ROOT="/usr/local/lib/nginx-tools"
+elif [[ -d "${_SELF_DIR}/lib" ]]; then
+    NGINX_TOOLS_ROOT="$_SELF_DIR"
+else
+    NGINX_TOOLS_ROOT="$_SELF_DIR"
+fi
+
+export NGINX_TOOLS_ROOT
+
+# -----------------------------
+# 加载基础库
+# -----------------------------
+source "${NGINX_TOOLS_ROOT}/lib/common.sh"
+source "${NGINX_TOOLS_ROOT}/lib/nginx.sh"
+source "${NGINX_TOOLS_ROOT}/lib/validation.sh"
+source "${NGINX_TOOLS_ROOT}/lib/backup-lib.sh"
+
+# -----------------------------
+# 初始化
+# -----------------------------
+_init() {
+    # 注册 cleanup
+    if [[ "$DRY_RUN" != "1" ]]; then
+        trap _run_cleanup EXIT INT TERM
+    fi
+
+    # 检测 nginx
+    detect_nginx_bin > /dev/null
+    detect_nginx_paths
+}
+
+# -----------------------------
+# 全局选项处理
+# -----------------------------
+_parse_global_opts() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --dry-run)
+                export NGINX_TOOLS_DRY_RUN=1
+                DRY_RUN=1
+                shift
+                ;;
+            --verbose)
+                export NGINX_TOOLS_VERBOSE=1
+                set -x
+                shift
+                ;;
+            --yes|-y)
+                export NGINX_TOOLS_YES=1
+                shift
+                ;;
+            --help|-h)
+                _show_help
+                exit 0
+                ;;
+            --version|-v)
+                _show_version
+                exit 0
+                ;;
+            -*)
+                die "未知选项: $1"
+                ;;
+            *)
+                break
+                ;;
+        esac
+    done
+}
+
+# -----------------------------
+# 版本信息
+# -----------------------------
+_show_version() {
+    echo "nginx-tools version 1.0.0"
+    echo "Nginx 运维命令行工具"
+    echo
+    if is_command nginx; then
+        echo "nginx 版本: $(nginx -v 2>&1 | sed 's/nginx version: //')"
+    else
+        echo "nginx: 未安装"
+    fi
+}
+
+# -----------------------------
+# 帮助信息
+# -----------------------------
+_show_help() {
+    cat <<EOF
+nginx-tools - Nginx 运维命令行工具
+
+用法:
+  nginx-tools <command> <subcommand> [options...]
+
+全局选项:
+  --dry-run       预览模式，不执行实际操作
+  --verbose       调试模式，输出详细日志
+  --yes, -y       跳过所有确认提示
+  --help, -h      显示帮助信息
+  --version, -v   显示版本信息
+
+可用命令:
+
+  site            站点管理 (add, delete, enable, disable, list, show)
+  proxy           反向代理 (add, remove, list)
+  ssl             SSL 证书管理 (issue, install, renew, list)
+  nginx           nginx 管理 (reload, restart, test, status)
+  template        模板生成 (list, generate)
+  log             日志查看 (access, error, tail)
+  upstream        负载均衡 (create, add, remove, list)
+  stream          TCP/UDP 转发 (add, remove, list)
+  backup          备份管理 (create, list, restore, cleanup)
+
+示例:
+  nginx-tools site add example.com --template static
+  nginx-tools proxy add example.com --upstream 127.0.0.1:3000
+  nginx-tools ssl issue example.com
+  nginx-tools nginx reload
+  nginx-tools --dry-run proxy add example.com --upstream 127.0.0.1:3000
+
+详细帮助:
+  nginx-tools <command> help
+
+项目地址: https://github.com/twikura/myscript
+EOF
+}
+
+# -----------------------------
+# 显示命令帮助
+# -----------------------------
+_show_command_help() {
+    local cmd="$1"
+    local module_file="${NGINX_TOOLS_ROOT}/modules/${cmd}.sh"
+
+    if [[ -f "$module_file" ]]; then
+        source "$module_file"
+        local help_fn="_${cmd}_help"
+        if declare -F "$help_fn" &>/dev/null; then
+            "$help_fn"
+        else
+            echo "命令 '${cmd}' 没有提供帮助信息"
+            echo "用法: nginx-tools ${cmd} <subcommand> [options...]"
+        fi
+    else
+        echo "未知命令: ${cmd}"
+        echo "运行 'nginx-tools --help' 查看可用命令"
+    fi
+}
+
+# -----------------------------
+# 主入口
+# -----------------------------
+main() {
+    _parse_global_opts "$@"
+
+    if [[ $# -eq 0 ]]; then
+        _show_help
+        exit 0
+    fi
+
+    local cmd="$1"
+    shift
+
+    # 处理 help 子命令
+    if [[ "$cmd" == "help" ]]; then
+        if [[ $# -gt 0 ]]; then
+            _show_command_help "$1"
+        else
+            _show_help
+        fi
+        exit 0
+    fi
+
+    # 加载对应模块
+    local module_file="${NGINX_TOOLS_ROOT}/modules/${cmd}.sh"
+
+    if [[ ! -f "$module_file" ]]; then
+        echo "未知命令: ${cmd}" >&2
+        echo "运行 'nginx-tools --help' 查看可用命令"
+        exit 1
+    fi
+
+    # 初始化环境
+    _init
+
+    # 加载模块
+    source "$module_file"
+
+    # 调用模块入口
+    local main_fn="_${cmd}_main"
+    if declare -F "$main_fn" &>/dev/null; then
+        "$main_fn" "$@"
+    else
+        die "模块 '${cmd}' 缺少入口函数 '${main_fn}'"
+    fi
+}
+
+main "$@"
