@@ -94,6 +94,19 @@ _ssl_require_acme() {
     curl https://get.acme.sh | sh || die "acme.sh 安装失败"
 
     _ssl_acme_path="$(_ssl_find_acme)" || die "acme.sh 安装后仍无法找到"
+
+    # 验证 acme.sh 可以正常运行（修复 shebang 问题）
+    if ! bash "$_ssl_acme_path" --version &>/dev/null; then
+        # acme.sh 安装时可能修改 shebang 导致无法直接执行
+        # 尝试修复 shebang
+        local _ssl_bash_path
+        _ssl_bash_path="$(command -v bash)" || _ssl_bash_path="/usr/bin/env bash"
+        sed -i "1s|^#!.*|#!${_ssl_bash_path}|" "$_ssl_acme_path"
+        if ! bash "$_ssl_acme_path" --version &>/dev/null; then
+            die "acme.sh 安装后无法运行，请手动检查: ${_ssl_acme_path}"
+        fi
+    fi
+
     log_ok "acme.sh 已安装: ${_ssl_acme_path}"
     echo "$_ssl_acme_path"
 }
@@ -190,7 +203,7 @@ _ssl_issue() {
     fi
 
     # 申请证书
-    "$_ssl_acme_path" --issue \
+    bash "$_ssl_acme_path" --issue \
         --nginx \
         -d "$_ssl_domain" \
         --keylength "ec-${_ssl_keylength}" \
@@ -214,7 +227,7 @@ _ssl_install_to_nginx() {
 
     log_step "安装证书到: ${_ssl_ssl_dir}/..."
 
-    "$_ssl_acme_path" --install-cert --ecc \
+    bash "$_ssl_acme_path" --install-cert --ecc \
         -d "$_ssl_domain" \
         --key-file       "${_ssl_ssl_dir}/privkey.pem" \
         --fullchain-file "${_ssl_ssl_dir}/fullchain.pem" \
@@ -264,7 +277,7 @@ _ssl_install() {
     _ssl_acme_path="$(_ssl_require_acme)"
 
     # 检查证书是否已申请
-    if ! "$_ssl_acme_path" --list 2>/dev/null | grep -q "$_ssl_domain"; then
+    if ! bash "$_ssl_acme_path" --list 2>/dev/null | grep -q "$_ssl_domain"; then
         die "未找到 ${_ssl_domain} 的证书。请先申请: nginx-tools ssl issue ${_ssl_domain}"
     fi
 
@@ -323,7 +336,7 @@ _ssl_renew() {
             return 0
         fi
 
-        "$_ssl_acme_path" --renew --ecc \
+        bash "$_ssl_acme_path" --renew --ecc \
             -d "$_ssl_domain" \
             $_ssl_force \
             || die "证书续签失败: ${_ssl_domain}"
@@ -342,7 +355,7 @@ _ssl_renew() {
             return 0
         fi
 
-        "$_ssl_acme_path" --renew --ecc \
+        bash "$_ssl_acme_path" --renew --ecc \
             $_ssl_force \
             || die "证书续签失败"
 
@@ -360,7 +373,7 @@ _ssl_list() {
     print_banner "SSL 证书列表"
 
     local _ssl_output
-    _ssl_output="$("$_ssl_acme_path" --list 2>&1)" || true
+    _ssl_output="$(bash "$_ssl_acme_path" --list 2>&1)" || true
 
     if [[ -z "$_ssl_output" ]] || echo "$_ssl_output" | grep -q "no certs"; then
         log_info "暂无已申请的证书"
