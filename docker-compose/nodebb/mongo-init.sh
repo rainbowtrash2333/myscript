@@ -15,14 +15,15 @@ mongosh \
     -u "${MONGO_INITDB_ROOT_USERNAME}" \
     -p "${MONGO_INITDB_ROOT_PASSWORD}" \
     --authenticationDatabase admin \
-    "${MONGO_INITDB_DATABASE}" <<EOF
+    "${MONGO_INITDB_DATABASE}" <<'EOF'
+// 通过 process.env 读取值，避免密码/用户名中含特殊字符时破坏 JS 字符串
 db.createUser({
-    user: "${MONGO_USER}",
-    pwd: "${MONGO_PASS}",
+    user: process.env.MONGO_USER,
+    pwd: process.env.MONGO_PASS,
     roles: [
-        { role: "readWrite", db: "${MONGO_INITDB_DATABASE}" },
+        { role: "readWrite", db: process.env.MONGO_INITDB_DATABASE },
         { role: "clusterMonitor", db: "admin" }
     ]
 });
-print("==> NodeBB MongoDB user created: ${MONGO_USER} @ ${MONGO_INITDB_DATABASE}");
+print("==> NodeBB MongoDB user created: " + process.env.MONGO_USER + " @ " + process.env.MONGO_INITDB_DATABASE);
 EOF

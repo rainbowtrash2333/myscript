@@ -43,11 +43,8 @@ sites/               # 站点生成记录
 ## 安装
 
 ```bash
-# 开发模式（创建符号链接）
+# 开发模式（创建符号链接，推荐）
 sudo ln -sf $(pwd)/nginx-tools /usr/local/bin/nginx-tools
-
-# 完整安装
-sudo make install PREFIX=/usr/local
 ```
 
 ## 快速上手

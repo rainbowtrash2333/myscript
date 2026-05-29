@@ -167,13 +167,26 @@ backup_restore() {
 backup_cleanup() {
     local retention="${1:-$_BACKUP_RETENTION_DAYS}"
 
+    # 校验 retention 是合法正整数，防止非法值传入 find -mtime
+    if ! [[ "$retention" =~ ^[0-9]+$ ]] || [[ "$retention" -lt 1 ]]; then
+        log_error "无效的保留天数: ${retention}（须为正整数）"
+        return 1
+    fi
+
     if is_dry_run; then
         log_info "[DRY-RUN] 将清理 ${retention} 天前的备份"
         return 0
     fi
 
+    # 目录不存在说明从未创建过备份，直接返回
+    if [[ ! -d "$_BACKUP_DIR" ]]; then
+        log_info "备份目录不存在，无需清理: ${_BACKUP_DIR}"
+        return 0
+    fi
+
     local count
-    count=$(find "$_BACKUP_DIR" -name "*.tar.gz" -type f -mtime "+${retention}" 2>/dev/null | wc -l)
+    # find 加 || true 防止空目录时的非零退出码经 pipefail 中断脚本
+    count=$(find "$_BACKUP_DIR" -name "*.tar.gz" -type f -mtime "+${retention}" 2>/dev/null | wc -l) || true
 
     if [[ "$count" -eq 0 ]]; then
         log_info "没有需要清理的旧备份"
@@ -181,6 +194,6 @@ backup_cleanup() {
     fi
 
     log_step "清理 ${retention} 天前的备份 (共 ${count} 个)..."
-    find "$_BACKUP_DIR" -name "*.tar.gz" -type f -mtime "+${retention}" -delete
+    find "$_BACKUP_DIR" -name "*.tar.gz" -type f -mtime "+${retention}" -delete 2>/dev/null || true
     log_ok "已清理 ${count} 个旧备份"
 }

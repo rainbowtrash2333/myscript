@@ -22,7 +22,8 @@ services:
     networks:
       - nodebb-net
     healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      # $$VAR 在 compose 中转义为容器运行时的 $VAR，从容器 env 读取凭证
+      test: ["CMD-SHELL", "mongosh --quiet -u \"$$MONGO_INITDB_ROOT_USERNAME\" -p \"$$MONGO_INITDB_ROOT_PASSWORD\" --authenticationDatabase admin --eval \"db.adminCommand('ping')\" || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 12

@@ -19,7 +19,8 @@ else
     exit 1
 fi
 
-CURRENT_USER=$(whoami)
+# 优先用 SUDO_USER（sudo 调用时为原始用户），回退到 whoami
+CURRENT_USER="${SUDO_USER:-$(whoami)}"
 
 echo
 echo "当前用户: ${CURRENT_USER}"
@@ -114,7 +115,13 @@ echo
 echo "配置 docker 用户组..."
 
 $SUDO groupadd docker 2>/dev/null || true
-$SUDO usermod -aG docker ${CURRENT_USER}
+
+if [[ "$CURRENT_USER" == "root" ]]; then
+    echo "警告：无法确定目标用户（当前为 root），跳过 docker 组添加。"
+    echo "请手动执行: sudo usermod -aG docker YOUR_USERNAME"
+else
+    $SUDO usermod -aG docker "${CURRENT_USER}"
+fi
 
 # -----------------------------
 # 测试

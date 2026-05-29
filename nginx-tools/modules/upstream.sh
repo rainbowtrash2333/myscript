@@ -7,9 +7,11 @@
 # =====================================================
 
 # -----------------------------
-# 常量
+# upstream 配置文件路径
 # -----------------------------
-_UPSTREAM_FILE="/etc/nginx/conf.d/upstream_proxy.conf"
+# 在模块加载时（_init 已运行 detect_nginx_paths 后）动态计算，
+# 以兼容非标准 nginx 安装路径，不再写死 /etc/nginx/conf.d。
+_UPSTREAM_FILE="$(get_nginx_conf_d)/upstream_proxy.conf"
 
 # -----------------------------
 # 帮助信息

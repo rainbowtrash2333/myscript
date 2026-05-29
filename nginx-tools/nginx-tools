@@ -50,6 +50,7 @@ _init() {
 # 全局选项处理
 # -----------------------------
 _parse_global_opts() {
+    _REMAINING_ARGS=()
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --dry-run)
@@ -78,7 +79,8 @@ _parse_global_opts() {
                 die "未知选项: $1"
                 ;;
             *)
-                break
+                _REMAINING_ARGS=("$@")
+                return 0
                 ;;
         esac
     done
@@ -168,6 +170,7 @@ _show_command_help() {
 # -----------------------------
 main() {
     _parse_global_opts "$@"
+    set -- "${_REMAINING_ARGS[@]}"
 
     if [[ $# -eq 0 ]]; then
         _show_help
@@ -177,7 +180,7 @@ main() {
     local cmd="$1"
     shift
 
-    # 处理 help 子命令
+    # 处理 help 子命令（免提权）
     if [[ "$cmd" == "help" ]]; then
         if [[ $# -gt 0 ]]; then
             _show_command_help "$1"
@@ -187,14 +190,17 @@ main() {
         exit 0
     fi
 
-    # 加载对应模块
+    # 校验命令存在（提权前完成，避免把错误命令带进 sudo 再报错）
     local module_file="${NGINX_TOOLS_ROOT}/modules/${cmd}.sh"
-
     if [[ ! -f "$module_file" ]]; then
         echo "未知命令: ${cmd}" >&2
         echo "运行 'nginx-tools --help' 查看可用命令"
         exit 1
     fi
+
+    # 除 help 外的命令都需要 root 权限；把 cmd 一并传入，
+    # 以便 exec sudo bash "$0" "$cmd" "$@" 重新执行时能还原完整命令
+    require_root "$cmd" "$@"
 
     # 初始化环境
     _init
