@@ -39,7 +39,7 @@ _log_detect_access_log() {
 
     # 从 nginx 完整配置中解析 access_log 路径 (跳过 off)
     if is_command nginx; then
-        _log_path=$(nginx -T 2>/dev/null | grep -oP 'access_log\s+\K[^;\s]+' | grep -v '^off$' | head -1) || true
+        _log_path=$(nginx -T 2>/dev/null | sed -n 's/.*access_log\s\+\([^;\s]*\).*/\1/p' | grep -v '^off$' | head -1) || true
     fi
 
     # 回退到默认路径
@@ -60,7 +60,7 @@ _log_detect_error_log() {
 
     # 从 nginx 完整配置中解析 error_log 路径 (跳过 off / stderr / syslog 等)
     if is_command nginx; then
-        _log_path=$(nginx -T 2>/dev/null | grep -oP 'error_log\s+\K[^;\s]+' | grep -vE '^(off|stderr|syslog|debug|info|notice|warn|error|crit|alert|emerg)$' | head -1) || true
+        _log_path=$(nginx -T 2>/dev/null | sed -n 's/.*error_log\s\+\([^;\s]*\).*/\1/p' | grep -vE '^(off|stderr|syslog|debug|info|notice|warn|error|crit|alert|emerg)$' | head -1) || true
     fi
 
     # 回退到默认路径

@@ -46,7 +46,7 @@ detect_nginx_paths() {
 
     # 获取 nginx 配置目录
     if [[ -z "$_NGINX_CONF_DIR" ]]; then
-        _NGINX_CONF_DIR="$(nginx -V 2>&1 | grep -oP '--conf-path=\K[^ ]+' | xargs dirname 2>/dev/null)" || true
+        _NGINX_CONF_DIR="$(nginx -V 2>&1 | sed -n 's/.*--conf-path=\([^ ]*\).*/\1/p' | xargs dirname 2>/dev/null)" || true
         [[ -d "$_NGINX_CONF_DIR" ]] || _NGINX_CONF_DIR="/etc/nginx"
     fi
 
@@ -58,7 +58,7 @@ detect_nginx_paths() {
     if [[ ! -d "$_NGINX_SITES_ENABLED" ]]; then
         # 检查 nginx.conf 中的 include 指令
         local include_dir
-        include_dir=$(grep -oP 'include\s+\K[^;]+' "${_NGINX_CONF_DIR}/nginx.conf" 2>/dev/null | \
+        include_dir=$(sed -n 's/.*include\s\+\([^;]*\).*/\1/p' "${_NGINX_CONF_DIR}/nginx.conf" 2>/dev/null | \
                      grep -v 'mime.types\|modules' | head -1 | sed 's/\*\.conf//' | xargs 2>/dev/null) || true
         if [[ -d "$include_dir" ]]; then
             _NGINX_SITES_ENABLED="$include_dir"
@@ -78,7 +78,7 @@ detect_nginx_paths() {
 
     # 如果 log 目录不在默认位置，从 nginx 配置检测
     local detected_log
-    detected_log=$(grep -oP 'access_log\s+\K[^;]+' "${_NGINX_CONF_DIR}/nginx.conf" 2>/dev/null | head -1 | xargs dirname 2>/dev/null) || true
+    detected_log=$(sed -n 's/.*access_log\s\+\([^;]*\).*/\1/p' "${_NGINX_CONF_DIR}/nginx.conf" 2>/dev/null | head -1 | xargs dirname 2>/dev/null) || true
     if [[ -d "$detected_log" ]]; then
         _NGINX_LOG_DIR="$detected_log"
     fi

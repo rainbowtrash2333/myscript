@@ -138,7 +138,7 @@ confirm() {
     local default="${2:-n}"
     local yn
 
-    if [[ "$NGINX_TOOLS_YES" == "1" ]]; then
+    if [[ "${NGINX_TOOLS_YES:-0}" == "1" ]]; then
         return 0
     fi
 
@@ -185,7 +185,7 @@ print_banner() {
 read_meta() {
     local file="$1"
     local key="$2"
-    grep -oP "# nginx-tools:${key}=\K.*" "$file" 2>/dev/null || true
+    sed -n "s/.*# nginx-tools:${key}=\(.*\)/\1/p" "$file" 2>/dev/null || true
 }
 
 write_meta() {

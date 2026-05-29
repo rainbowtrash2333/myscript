@@ -85,7 +85,7 @@ _check_port_available() {
             local _stream_sdir
             _stream_sdir="$(get_nginx_stream_d)"
             local _stream_existing_listen
-            _stream_existing_listen="$(grep -oP 'listen\s+\K[0-9]+' "${_stream_sdir}/${_stream_skip_name}.conf" 2>/dev/null || true)"
+            _stream_existing_listen="$(sed -n 's/.*listen\s\+\([0-9]*\).*/\1/p' "${_stream_sdir}/${_stream_skip_name}.conf" 2>/dev/null || true)"
             if [[ "$_stream_existing_listen" == "$_stream_port" ]]; then
                 return 0
             fi
@@ -163,9 +163,9 @@ _stream_list() {
 
         local _stream_cname _stream_cport _stream_cbackend _stream_cproto _stream_ccreated
         _stream_cname="$(basename "$_stream_cfile" .conf)"
-        _stream_cport="$(grep -oP 'listen\s+\K[0-9]+' "$_stream_cfile" | head -1 || echo "?")"
-        _stream_cproto="$(grep -oP 'listen\s+[0-9]+\s+\K[a-z]+' "$_stream_cfile" | head -1 || echo "tcp")"
-        _stream_cbackend="$(grep -oP 'proxy_pass\s+\K[^;]+' "$_stream_cfile" | head -1 || echo "?")"
+        _stream_cport="$(sed -n 's/.*listen\s\+\([0-9]*\).*/\1/p' "$_stream_cfile" | head -1 || echo "?")"
+        _stream_cproto="$(sed -n 's/.*listen\s\+[0-9]\+\s\+\([a-z]*\).*/\1/p' "$_stream_cfile" | head -1 || echo "tcp")"
+        _stream_cbackend="$(sed -n 's/.*proxy_pass\s\+\([^;]*\).*/\1/p' "$_stream_cfile" | head -1 || echo "?")"
         _stream_ccreated="$(read_meta "$_stream_cfile" "created")"
 
         local _stream_status_marker
