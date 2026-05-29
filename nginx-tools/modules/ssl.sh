@@ -75,6 +75,7 @@ _ssl_find_acme() {
 _ssl_require_acme() {
     local _ssl_acme_path
     _ssl_acme_path="$(_ssl_find_acme)" && {
+        bash "$_ssl_acme_path" --set-default-ca --server letsencrypt 2>/dev/null || true
         echo "$_ssl_acme_path"
         return 0
     }
@@ -106,6 +107,9 @@ _ssl_require_acme() {
             die "acme.sh 安装后无法运行，请手动检查: ${_ssl_acme_path}"
         fi
     fi
+
+    # 切换默认 CA 为 Let's Encrypt（ZeroSSL 需要邮箱注册，Let's Encrypt 无需）
+    bash "$_ssl_acme_path" --set-default-ca --server letsencrypt 2>/dev/null || true
 
     log_ok "acme.sh 已安装: ${_ssl_acme_path}"
     echo "$_ssl_acme_path"
